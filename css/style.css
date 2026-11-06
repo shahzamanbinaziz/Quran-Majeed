@@ -1,0 +1,205 @@
+/* Amiri Quran (SIL Open Font License, see fonts/OFL-AmiriQuran.txt) - hosted here so the Uthmani script always renders correctly */
+@font-face {
+  font-family: "Amiri Quran";
+  src: url("../fonts/AmiriQuran-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --bg: #f5f3ea;
+  --card: #ffffff;
+  --ink: #1c2a24;
+  --muted: #5d6c64;
+  --primary: #1f6f55;
+  --primary-ink: #ffffff;
+  --accent: #b2862b;
+  --border: #e3dece;
+  --soft: #eef3ee;
+  --danger: #b3382c;
+  --shadow: 0 1px 2px rgba(20, 40, 30, .06), 0 6px 20px rgba(20, 40, 30, .06);
+  --radius: 16px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1915;
+    --card: #15251f;
+    --ink: #e8efe9;
+    --muted: #9bb0a5;
+    --primary: #3ca382;
+    --primary-ink: #06140e;
+    --accent: #d8ad4f;
+    --border: #24392f;
+    --soft: #1a2d26;
+    --danger: #f08a7e;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 780px; width: 100%; margin: 0 auto;
+  padding: max(12px, env(safe-area-inset-top)) 16px 4px;
+}
+.brand { font-weight: 700; letter-spacing: .2px; color: var(--primary); }
+.icon-btn {
+  display: inline-grid; place-items: center;
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 0; background: transparent; color: var(--muted);
+}
+.icon-btn:hover { background: var(--soft); color: var(--ink); }
+
+.wrap { width: 100%; max-width: 780px; margin: 0 auto; padding: 8px 16px 40px; flex: 1; }
+
+/* ----- hero ----- */
+.hero { text-align: center; padding: 18px 0 10px; }
+.bismillah {
+  font-family: "Amiri Quran", "Noto Naskh Arabic", "Traditional Arabic", serif;
+  font-size: clamp(1.7rem, 6vw, 2.4rem); line-height: 1.9; margin: 0; color: var(--accent);
+}
+h1 { margin: 4px 0 6px; font-size: clamp(1.5rem, 5.5vw, 2.1rem); line-height: 1.2; }
+.sub { margin: 0 auto; max-width: 560px; color: var(--muted); }
+
+/* ----- search ----- */
+.searchbox {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 14px; padding: 6px 6px 6px 16px;
+  background: var(--card); border: 1.5px solid var(--border); border-radius: 999px; box-shadow: var(--shadow);
+}
+.searchbox:focus-within { border-color: var(--primary); }
+.searchbox input {
+  flex: 1; min-width: 0; border: 0; background: transparent; outline: 0;
+  font-size: 1.05rem; padding: 10px 4px;
+}
+.searchbox input::placeholder { color: var(--muted); opacity: .8; }
+.mic { flex: none; }
+.mic.on { background: var(--danger); color: #fff; animation: pulse 1.2s infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--danger) 25%, transparent); } }
+.go {
+  flex: none; border: 0; border-radius: 999px; height: 44px; padding: 0 20px;
+  background: var(--primary); color: var(--primary-ink); font-weight: 600;
+}
+.go:disabled { opacity: .6; cursor: progress; }
+
+.langs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 10px 4px 0; font-size: .88rem; color: var(--muted); }
+.langs button {
+  border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 3px 12px; min-height: 30px;
+}
+.langs button[aria-pressed="true"] { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 4px; justify-content: center; }
+.chip {
+  border: 1px solid var(--border); background: var(--card); border-radius: 999px;
+  padding: 7px 14px; font-size: .92rem; color: var(--ink); min-height: 38px;
+}
+.chip:hover { border-color: var(--primary); }
+.chip[lang="ar"] { font-family: "Amiri Quran", "Noto Naskh Arabic", serif; font-size: 1.1rem; }
+
+/* ----- status / intro ----- */
+#status { min-height: 1.6em; margin: 14px 4px 0; color: var(--muted); text-align: center; }
+#status.error { color: var(--danger); }
+#status.loading::before {
+  content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px;
+  border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.intro {
+  margin: 14px 0 4px; padding: 12px 16px; border-radius: var(--radius);
+  background: var(--soft); border: 1px solid var(--border);
+}
+.intro p { margin: 0; }
+
+/* ----- ayah cards ----- */
+.results { display: grid; gap: 14px; margin-top: 14px; }
+.ayah {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px 18px 12px; box-shadow: var(--shadow);
+}
+.ayah-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--soft); color: var(--primary); border-radius: 999px; padding: 3px 12px; font-size: .86rem; font-weight: 600;
+}
+.badge .ar { font-family: "Amiri Quran", "Noto Naskh Arabic", serif; font-weight: 400; font-size: 1rem; }
+.why { color: var(--muted); font-size: .9rem; }
+.arabic {
+  margin: 6px 0 10px; text-align: right;
+  font-family: "Amiri Quran", "Noto Naskh Arabic", "Traditional Arabic", serif;
+  font-size: clamp(1.6rem, 5.4vw, 2.2rem); line-height: 2.2;
+}
+.roman { margin: 0 0 4px; font-size: 1.05rem; padding-top: 10px; border-top: 1px dashed var(--border); }
+.roman.pending { color: var(--muted); }
+.roman.pending::after { content: ""; display: inline-block; width: 12px; height: 12px; margin-left: 8px; vertical-align: -1px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; }
+.roman.fallback { color: var(--muted); }
+.roman .urdu-script { display: block; direction: rtl; text-align: right; font-size: 1.15rem; line-height: 2; color: var(--ink); margin-top: 6px; }
+.roman .note { display: block; font-size: .85rem; color: var(--danger); }
+.actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.actions button {
+  border: 0; background: transparent; color: var(--muted); border-radius: 10px;
+  padding: 6px 10px; min-height: 38px; font-size: .9rem;
+}
+.actions button:hover { background: var(--soft); color: var(--ink); }
+.actions button[aria-pressed="true"] { color: var(--primary); font-weight: 600; }
+
+.more {
+  display: block; margin: 16px auto 0; border: 1.5px solid var(--primary); background: transparent;
+  color: var(--primary); border-radius: 999px; padding: 10px 22px; font-weight: 600;
+}
+.more:hover { background: var(--soft); }
+
+/* ----- footer / dialog ----- */
+.foot { max-width: 780px; margin: 0 auto; padding: 0 16px max(24px, env(safe-area-inset-bottom)); color: var(--muted); font-size: .82rem; text-align: center; }
+dialog {
+  width: min(92vw, 460px); border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card); color: var(--ink); padding: 0;
+}
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.settings-form { padding: 18px 20px 16px; display: grid; gap: 8px; }
+.settings-form h2 { margin: 0; font-size: 1.2rem; }
+.settings-form input {
+  width: 100%; padding: 11px 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--bg);
+}
+.muted { color: var(--muted); margin: 0; }
+.small { font-size: .85rem; }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.dialog-actions button { border-radius: 10px; padding: 9px 16px; border: 1px solid var(--border); background: transparent; min-height: 42px; }
+.dialog-actions .primary { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); font-weight: 600; }
+a { color: var(--primary); }
+
+.toast {
+  position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  background: var(--ink); color: var(--bg); padding: 9px 18px; border-radius: 999px; font-size: .9rem; z-index: 10;
+}
+
+@media (min-width: 640px) {
+  .wrap { padding-top: 20px; }
+  .ayah { padding: 20px 24px 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; }
+}
+
+.retry {
+  margin-top: 6px; border: 1px solid var(--border); background: transparent; color: var(--ink);
+  border-radius: 10px; padding: 6px 12px; min-height: 36px; font-size: .88rem;
+}
+.retry:hover { border-color: var(--primary); }

@@ -1,0 +1,10 @@
+name = "quran-majeed-api"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+# Websites that may use this Worker (comma separated, no path, no trailing slash).
+ALLOWED_ORIGINS = "https://shahzamanbinaziz.github.io"
+GEMINI_MODEL = "gemini-3.8-flash"
+
+# The secret key is NOT stored here. Add it with:  npx wrangler secret put GEMINI_API_KEY

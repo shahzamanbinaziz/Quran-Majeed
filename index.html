@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ur-Latn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Quran Majeed - Ayat dhoondein, Roman Urdu tarjuma</title>
+  <meta name="description" content="Quran ki koi bhi ayat ka hissa likhein ya bolein, ya sawal poochein (jaise: namaz ki baat Quran me kahan hui?). Poori ayat Roman Urdu tarjume ke saath.">
+  <meta name="theme-color" content="#1f6f55">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%231f6f55'/%3E%3Cpath d='M30 28h40a4 4 0 0 1 4 4v42a4 4 0 0 1-4 4H30a4 4 0 0 1-4-4V32a4 4 0 0 1 4-4z' fill='none' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M50 28v50' stroke='%23fff' stroke-width='5'/%3E%3C/svg%3E">
+  <link rel="preload" href="fonts/AmiriQuran-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">Quran Majeed</span>
+    <button type="button" id="open-settings" class="icon-btn" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <p class="bismillah" lang="ar" dir="rtl">بِسۡمِ ٱللَّهِ ٱلرَّحۡمَـٰنِ ٱلرَّحِیمِ</p>
+      <h1>Quran me ayat dhoondein</h1>
+      <p class="sub">Ayat ka koi bhi hissa <strong>likhein ya bolein</strong>, ya apna <strong>sawal poochein</strong>. Poori ayat Roman Urdu tarjume ke saath mil jayegi.</p>
+    </section>
+
+    <form id="search-form" role="search" autocomplete="off">
+      <div class="searchbox">
+        <input id="q" name="q" type="search" dir="auto" enterkeyhint="search" autocapitalize="off" spellcheck="false"
+               placeholder="Jaise: namaz ki baat Quran me kahan hui?" aria-label="Ayat ya sawal likhein">
+        <button type="button" id="mic" class="icon-btn mic" aria-label="Bol kar search karein" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        </button>
+        <button type="submit" class="go">Dhoondein</button>
+      </div>
+      <div class="langs" role="group" aria-label="Bolne ki zubaan">
+        <span class="langs-label">Bolne ki zubaan:</span>
+        <button type="button" data-lang="ur-PK" aria-pressed="true">Urdu</button>
+        <button type="button" data-lang="ar-SA" aria-pressed="false">Arabic</button>
+        <button type="button" data-lang="en-US" aria-pressed="false">English</button>
+      </div>
+    </form>
+
+    <div id="examples" class="chips" aria-label="Misaalein">
+      <button type="button" class="chip">Namaz ki baat Quran me kahan hui hai?</button>
+      <button type="button" class="chip">Sabr ke baare me ayat</button>
+      <button type="button" class="chip">Walidain ke saath sulook</button>
+      <button type="button" class="chip" lang="ar" dir="rtl">وَأَقِيمُوا الصَّلَاةَ وَآتُوا</button>
+      <button type="button" class="chip">qul huwallahu ahad</button>
+    </div>
+
+    <p id="status" role="status" aria-live="polite"></p>
+    <section id="intro" class="intro" hidden></section>
+    <section id="results" class="results"></section>
+    <button type="button" id="more" class="more" hidden>Mazeed ayat dikhayein</button>
+    <noscript><p class="status error">Is website ko chalane ke liye JavaScript zaroori hai.</p></noscript>
+  </main>
+
+  <footer class="foot">
+    <p>Arabic matn ek mustanad Quran database se liya gaya hai. Roman Urdu tarjuma Gemini AI se banta hai, is me ghalti ho sakti hai &mdash; dini masail ke liye ulama se rujoo karein.</p>
+  </footer>
+
+  <dialog id="settings">
+    <form method="dialog" class="settings-form">
+      <h2>Settings</h2>
+      <p id="settings-mode" class="muted"></p>
+      <label for="key">Meri apni Gemini API key</label>
+      <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="AIza...">
+      <p class="muted small">Key sirf aap ke apne browser me save hoti hai aur sirf Google Gemini ko bheji jati hai. Muft key <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> se milti hai.</p>
+      <div class="dialog-actions">
+        <button type="button" id="key-remove" class="ghost">Key hatayein</button>
+        <button type="button" id="key-save" class="primary">Save</button>
+        <button value="close" class="ghost">Band karein</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
