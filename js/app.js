@@ -184,9 +184,11 @@ const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
 
 function stopAudio() {
   speechToken++; // cancels a running chunk chain
+  speechCtl?.abort();
+  speechCtl = null;
   if (audio) { audio.pause(); audio = null; }
   if (synth) synth.cancel();
-  if (activeBtn) { activeBtn.textContent = LABELS[activeBtn.dataset.act]; activeBtn.setAttribute("aria-pressed", "false"); activeBtn = null; }
+  if (activeBtn) { activeBtn.textContent = LABELS[activeBtn.dataset.act]; activeBtn.setAttribute("aria-pressed", "false"); activeBtn.removeAttribute("aria-busy"); activeBtn = null; }
 }
 function markPlaying(btn) {
   activeBtn = btn;
@@ -206,6 +208,11 @@ function toggleAudio(card, btn) {
   audio.addEventListener("error", () => { toast("Tilawat nahi chal saki"); stopAudio(); });
   audio.play().catch(() => { toast("Tilawat nahi chal saki"); stopAudio(); });
 }
+
+// Gemini text-to-speech first (nothing to install on the phone). If that is not possible the
+// browser's own Urdu voice is used when the device has one.
+const spoken = new Map(); // "id:length" -> blob url, so a second tap plays instantly and costs nothing
+let speechCtl = null;
 
 function getVoices() {
   return new Promise((resolve) => {
@@ -229,42 +236,93 @@ function speechChunks(text) {
   return out;
 }
 
-async function toggleSpeech(card, btn) {
-  const wasThis = activeBtn === btn;
-  stopAudio();
-  if (wasThis) return;
-  if (!synth) { toast("Is browser me awaaz se sunna support nahi. Chrome ya Edge use karein."); return; }
-
-  const p = $('[data-role="roman"]', card);
-  let text = p.dataset.urdu;
-  if (!text) { // no Urdu-script version of the Roman Urdu yet: fall back to the Urdu translation from our data
-    try { text = (await loadUrdu(Q))[card.dataset.i]; } catch { /* handled below */ }
-  }
-  if (!text) { toast("Tarjuma abhi tayyar nahi hai. Thori der baad dobara dabayein."); return; }
-
-  const token = speechToken;
-  markPlaying(btn);
+async function speakWithBrowserVoice(text, token) {
+  if (!synth) return false;
   const voice = pickUrduVoice(await getVoices());
-  if (token !== speechToken) return; // user pressed stop / another button while voices were loading
-  if (!voice) toast("Is device me Urdu awaaz nahi mili. Phone/computer ki Text-to-speech settings me Urdu (Pakistan) install karein.");
-
+  if (!voice || token !== speechToken) return false;
   const chunks = speechChunks(text);
   const speakAt = (k) => {
     if (token !== speechToken) return;
     if (k >= chunks.length) { stopAudio(); return; }
     const u = new SpeechSynthesisUtterance(chunks[k]);
-    u.lang = voice?.lang || "ur-PK";
-    if (voice) u.voice = voice;
+    u.lang = voice.lang;
+    u.voice = voice;
     u.rate = 0.9;
     u.onend = () => speakAt(k + 1);
     u.onerror = (ev) => {
       if (token !== speechToken || ev.error === "canceled" || ev.error === "interrupted") return;
-      toast("Awaaz nahi chal saki. Device me Urdu text-to-speech check karein.");
+      toast(SPEECH_FAILED);
       stopAudio();
     };
     synth.speak(u);
   };
+  markPlaying(activeBtn);
   speakAt(0);
+  return true;
+}
+
+const SPEECH_FAILED = "Awaaz abhi nahi chal saki. Thori der baad dobara koshish karein.";
+
+// iPhone Safari only lets audio start inside the tap itself, not after waiting for the network.
+// So the audio element is "unlocked" with a silent clip right now, and the real voice is put into it later.
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+
+async function toggleSpeech(card, btn) {
+  const wasThis = activeBtn === btn;
+  stopAudio();
+  if (wasThis) return;
+  const unlocked = new Audio(SILENT_WAV);
+  unlocked.play().catch(() => {});
+  audio = unlocked;
+
+  const p = $('[data-role="roman"]', card);
+  let text = p.dataset.urdu;
+  if (!text) { // no Urdu-script version of the Roman Urdu yet: use the Urdu translation from our data
+    try { text = (await loadUrdu(Q))[card.dataset.i]; } catch { /* handled below */ }
+  }
+  if (!text) { unlocked.pause(); audio = null; toast("Tarjuma abhi tayyar nahi hai. Thori der baad dobara dabayein."); return; }
+
+  const token = speechToken;
+  activeBtn = btn;
+  btn.textContent = "Awaaz ban rahi hai…"; // tapping again cancels
+  btn.setAttribute("aria-busy", "true");
+
+  // 1) Gemini text-to-speech
+  if (AI.canSpeak()) {
+    try {
+      speechCtl = new AbortController();
+      const key = `${card.dataset.id}:${text.length}`;
+      let url = spoken.get(key);
+      if (!url) {
+        url = URL.createObjectURL(await AI.synthesize(text, speechCtl.signal));
+        if (spoken.size >= 30) { const [oldKey, oldUrl] = spoken.entries().next().value; URL.revokeObjectURL(oldUrl); spoken.delete(oldKey); }
+        spoken.set(key, url);
+      }
+      if (token !== speechToken) return;
+      btn.removeAttribute("aria-busy");
+      audio = unlocked;
+      audio.src = url;
+      markPlaying(btn);
+      audio.addEventListener("ended", stopAudio);
+      audio.addEventListener("error", () => { toast(SPEECH_FAILED); stopAudio(); });
+      await audio.play();
+      return;
+    } catch (e) {
+      if (e.name === "AbortError" || token !== speechToken) return;
+      console.warn("Gemini speech failed, trying the browser voice:", e);
+      unlocked.pause();
+      audio = null;
+    }
+  }
+  if (token !== speechToken) return;
+
+  // 2) the device's own Urdu voice, if it has one
+  unlocked.pause();
+  audio = null;
+  btn.removeAttribute("aria-busy");
+  if (!(await speakWithBrowserVoice(text, token))) {
+    if (token === speechToken) { stopAudio(); toast(SPEECH_FAILED); }
+  }
 }
 
 async function copyCard(card) {

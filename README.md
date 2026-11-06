@@ -114,13 +114,17 @@ node scripts/test-search.mjs
 
 ## Tarjuma awaaz me sunna ("Tarjuma sunein")
 
-Browser ki **Text-to-speech** (`speechSynthesis`) Urdu awaaz se tarjuma parhti hai. Phone/browser ki Urdu awaaz *Urdu script* parhti hai, Roman Urdu ko wo English ki tarah bigaad kar parhti, isliye Gemini har ayat ka wohi tarjuma Urdu script me bhi banata hai (`urdu_script`), aur awaaz wohi parhti hai. Screen par Roman Urdu hi dikhta hai.
+User ke liye bas ek button: **Tarjuma sunein**. Kuch install nahi karna, har phone par chalta hai.
 
-- Agar Urdu script wala hissa na bane, to awaaz Maududi ka Urdu tarjuma parhti hai.
-- **Android (Chrome):** Settings -> System -> Languages -> Text-to-speech -> Google TTS me **Urdu (Pakistan)** install karein.
-- **Windows:** Settings -> Time & language -> Speech -> Add voices -> Urdu.
-- **iPhone/Mac:** Settings -> Accessibility -> Spoken Content -> Voices -> Urdu.
-- Agar device me Urdu awaaz nahi hai to website bata deti hai ke kya install karna hai.
+Peeche kya hota hai:
+1. Gemini har ayat ka tarjuma Roman Urdu ke saath *Urdu script* me bhi banata hai (`urdu_script`), kyunke awaaz Urdu script behtar parhti hai.
+2. Button dabane par **Gemini text-to-speech** (`gemini-3.8-flash-tts`, phir `gemini-3.8-flash-lite-tts`) us Urdu text ki audio banata hai. Wahi key chalti hai jo text ke liye hai.
+3. Audio ek baar ban jaye to us session me dobara dabane par foran chalti hai (dobara Gemini nahi bulata).
+4. Agar Gemini awaaz na bana sake (limit, internet) to device ki apni Urdu awaaz istemal hoti hai, agar device me ho. Warna chhota sa message aata hai: "Awaaz abhi nahi chal saki. Thori der baad dobara koshish karein."
+
+Settings `js/config.js` me: `TTS_MODELS`, `TTS_VOICE` (default `Kore`), `TTS_STYLE`.
+
+**Zaroori note (developer ke liye):** Google ke docs me Urdu Gemini TTS ki official language list me nazar nahi aaya, isliye awaaz ki quality asal phone par sun kar dekhni chahiye. Agar Urdu script theek na parhe to option ye hai ke ayat ka tarjuma Hindi (Devanagari) script me bhi banwa kar usay parhwaya jaye, Hindi/Urdu bolne me lagbhag ek hi hain.
 
 ## Awaaz se search (mic)
 

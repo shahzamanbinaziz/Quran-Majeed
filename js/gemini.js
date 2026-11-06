@@ -293,3 +293,98 @@ export async function translateAyat(items, signal) {
   if (rejected && out.size === 0) throw rejected.reason; // nothing worked: let the UI show the reason
   return out;
 }
+
+// ---------- 3) spoken translation: Gemini text-to-speech -> playable WAV ----------
+const API = "https://generativelanguage.googleapis.com/v1beta";
+export const canSpeak = () => Boolean(activeKey()); // needs a key in the browser (the optional Worker only does text)
+
+function ttsRequest(shape, model, key, text, signal) {
+  const headers = { "Content-Type": "application/json", "x-goog-api-key": key };
+  if (shape === "generate") {
+    return fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST", signal, headers,
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${CONFIG.TTS_STYLE}:\n${text}` }] }],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: CONFIG.TTS_VOICE } } },
+        },
+      }),
+    });
+  }
+  // newer "interactions" endpoint
+  return fetch(`${API}/interactions`, {
+    method: "POST", signal, headers,
+    body: JSON.stringify({
+      model,
+      input: [{ type: "user_input", content: [{ type: "text", text, annotations: [{ type: "speech_metadata", style: CONFIG.TTS_STYLE.replace(/^Say /, "") }] }] }],
+      response_format: { type: "audio" },
+      generation_config: { speech_config: [{ voice: CONFIG.TTS_VOICE }] },
+    }),
+  });
+}
+
+// the audio can sit in different places depending on the endpoint: look for it everywhere
+function findAudio(node, depth = 0) {
+  if (!node || typeof node !== "object" || depth > 8) return null;
+  const inline = node.inlineData || node.inline_data;
+  if (typeof inline?.data === "string") return { b64: inline.data, mime: inline.mimeType || inline.mime_type || "" };
+  const mime = String(node.mime_type || node.mimeType || "");
+  if (typeof node.data === "string" && node.data.length > 200 && (/audio/i.test(mime) || node.type === "audio")) return { b64: node.data, mime };
+  for (const v of Object.values(node)) {
+    const f = findAudio(v, depth + 1);
+    if (f) return f;
+  }
+  return null;
+}
+
+function pcmToWav(pcm, rate) {
+  const header = new ArrayBuffer(44), v = new DataView(header);
+  const str = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, "RIFF"); v.setUint32(4, 36 + pcm.length, true); str(8, "WAVE"); str(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); // PCM, mono
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, pcm.length, true);
+  return new Blob([header, pcm], { type: "audio/wav" });
+}
+
+function toAudioBlob({ b64, mime }) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  if (bin.startsWith("RIFF")) return new Blob([bytes], { type: "audio/wav" }); // already a WAV file
+  const rate = Number(/rate=(\d+)/i.exec(mime)?.[1]) || 24000; // raw 16-bit mono PCM
+  return pcmToWav(bytes, rate);
+}
+
+/** Text (Urdu) -> audio Blob (WAV). Throws an Error with .userMessage when it cannot. */
+export async function synthesize(text, signal) {
+  const key = activeKey();
+  if (!key) throw fail("NO_KEY", "Awaaz ke liye Gemini key chahiye.");
+  const clipped = text.slice(0, 1800);
+  let last = { status: 0, msg: "" };
+  for (const model of CONFIG.TTS_MODELS) {
+    for (const shape of ["generate", "interactions"]) {
+      let res, data = null;
+      try {
+        res = await ttsRequest(shape, model, key, clipped, signal);
+      } catch (e) {
+        if (e.name === "AbortError") throw e;
+        throw fail("NETWORK", "Internet se rabta nahi ho saka.");
+      }
+      try { data = await res.json(); } catch { /* not json */ }
+      if (res.ok) {
+        const audio = findAudio(data);
+        if (audio) return toAudioBlob(audio);
+        last = { status: 200, msg: "no audio in the answer" };
+        continue; // the other endpoint shape may work
+      }
+      last = { status: res.status, msg: shortMsg(data) };
+      if (res.status === 401 || res.status === 403 || (res.status === 400 && /api key/i.test(last.msg))) throw httpError(last, true);
+      if (res.status === 429 || RETRY_STATUS.has(res.status)) break; // busy / over the limit: next model
+      // 400 / 404: this model does not accept this endpoint shape -> try the other one
+    }
+  }
+  console.warn("Gemini text-to-speech failed:", last);
+  throw httpError(last.status ? last : { status: 0, msg: "" }, true);
+}
