@@ -325,6 +325,9 @@ export async function translateAyat(items, signal, onPart) {
 
 // ---------- 3) spoken translation: Gemini text-to-speech -> playable WAV ----------
 const API = "https://generativelanguage.googleapis.com/v1beta";
+const VOICE_STORE = "qm_voice";
+export const getVoice = () => { try { const v = localStorage.getItem(VOICE_STORE); if (v && CONFIG.TTS_VOICES.some(([n]) => n === v)) return v; } catch { /* private mode */ } return CONFIG.TTS_VOICE; };
+export const setVoice = (v) => { try { localStorage.setItem(VOICE_STORE, v); } catch { /* private mode */ } };
 export const canSpeak = () => Boolean(activeKey()); // needs a key in the browser (the optional Worker only does text)
 
 function ttsRequest(shape, model, key, text, signal) {
@@ -336,7 +339,7 @@ function ttsRequest(shape, model, key, text, signal) {
         contents: [{ parts: [{ text }] }], // plain text only: anything added in front would be read aloud
         generationConfig: {
           responseModalities: ["AUDIO"],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: CONFIG.TTS_VOICE } } },
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: getVoice() } } },
         },
       }),
     });
@@ -348,7 +351,7 @@ function ttsRequest(shape, model, key, text, signal) {
       model,
       input: [{ type: "user_input", content: [{ type: "text", text, annotations: [{ type: "speech_metadata", style: CONFIG.TTS_STYLE }] }] }],
       response_format: { type: "audio" },
-      generation_config: { speech_config: [{ voice: CONFIG.TTS_VOICE }] },
+      generation_config: { speech_config: [{ voice: getVoice() }] },
     }),
   });
 }

@@ -123,7 +123,7 @@ Peeche kya hota hai:
 4. Audio ek baar ban jaye to us session me dobara dabane par foran chalti hai (dobara Gemini nahi bulata).
 5. Agar Gemini awaaz na bana sake (limit, internet) to device ki apni Urdu awaaz istemal hoti hai, agar device me ho. Warna chhota sa message aata hai: "Awaaz abhi nahi chal saki. Thori der baad dobara koshish karein."
 
-Settings `js/config.js` me: `TTS_MODELS`, `TTS_VOICE` (default `Kore`), `TTS_STYLE`.
+Awaaz: default **Charon** (gehri mardana awaaz). Settings (gear) me "Tarjume ki awaaz" se Algenib (bohat gehri), Alnilam, Orus ya Kore (aurat) chun sakte hain; choice browser me yaad rehti hai. List `js/config.js` ke `TTS_VOICES` me hai.
 
 **Zaroori note (developer ke liye):** Google ke docs me Urdu Gemini TTS ki official language list me nazar nahi aaya, isliye awaaz ki quality asal phone par sun kar dekhni chahiye. Agar Urdu script theek na parhe to option ye hai ke ayat ka tarjuma Hindi (Devanagari) script me bhi banwa kar usay parhwaya jaye, Hindi/Urdu bolne me lagbhag ek hi hain.
 

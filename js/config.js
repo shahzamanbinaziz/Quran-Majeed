@@ -14,7 +14,15 @@ export const CONFIG = {
   // Spoken translation: Gemini text-to-speech (works on every phone, nothing to install).
   // "lite" is the fast one (measured ~4s even for long text, the normal one ~9s), so it goes first.
   TTS_MODELS: ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"],
-  TTS_VOICE: "Kore",
+  // Default voice: a deep male voice. The person can change it in Settings (list below, all Gemini voices).
+  TTS_VOICE: "Charon",
+  TTS_VOICES: [
+    ["Charon", "Gehri mardana awaaz (default)"],
+    ["Algenib", "Bohat gehri, bhaari mardana awaaz"],
+    ["Alnilam", "Mazboot, wazeh mardana awaaz"],
+    ["Orus", "Sanjeeda mardana awaaz"],
+    ["Kore", "Aurat ki awaaz"],
+  ],
   // Used only by the "interactions" endpoint, where style is a separate field and is NOT read aloud.
   // (In the plain endpoint any instruction put in front of the text gets spoken, so none is added there.)
   TTS_STYLE: "slowly, calmly and clearly, in Urdu with a natural Pakistani accent",

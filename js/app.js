@@ -20,6 +20,7 @@ const el = {
   settingsMode: $("#settings-mode"),
   key: $("#key"),
   keySave: $("#key-save"),
+  voice: $("#voice"),
   keyRemove: $("#key-remove"),
 };
 
@@ -267,7 +268,7 @@ function prepareVoice(card, run) {
   if (!AI.canSpeak() || card !== el.results.firstElementChild || run !== runId) return;
   const text = $('[data-role="roman"]', card).dataset.urdu;
   if (!text) return;
-  speechUrl(`${card.dataset.id}:${text.length}`, text, controller?.signal);
+  speechUrl(`${card.dataset.id}:${text.length}:${AI.getVoice()}`, text, controller?.signal);
 }
 
 function getVoices() {
@@ -347,7 +348,7 @@ async function toggleSpeech(card, btn) {
   if (AI.canSpeak()) {
     try {
       speechCtl = new AbortController();
-      const url = await abortable(speechUrl(`${card.dataset.id}:${text.length}`, text, controller?.signal), speechCtl.signal);
+      const url = await abortable(speechUrl(`${card.dataset.id}:${text.length}:${AI.getVoice()}`, text, controller?.signal), speechCtl.signal);
       if (token !== speechToken) return;
       btn.removeAttribute("aria-busy");
       audio = unlocked;
@@ -578,9 +579,12 @@ function openSettings() {
   el.settingsMode.textContent = modeText[AI.mode()];
   el.key.value = "";
   el.key.placeholder = AI.getUserKey() ? "Key save hai (naye se badalne ke liye likhein)" : "AIza...";
+  el.voice.replaceChildren(...CONFIG.TTS_VOICES.map(([name, label]) => h("option", { value: name }, label)));
+  el.voice.value = AI.getVoice();
   el.settings.showModal();
 }
 el.openSettings.addEventListener("click", openSettings);
+el.voice.addEventListener("change", () => { AI.setVoice(el.voice.value); toast("Awaaz badal di gayi"); });
 el.keySave.addEventListener("click", () => {
   const v = el.key.value.trim();
   if (!v) { el.key.focus(); return; }
