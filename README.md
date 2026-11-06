@@ -118,13 +118,21 @@ User ke liye bas ek button: **Tarjuma sunein**. Kuch install nahi karna, har pho
 
 Peeche kya hota hai:
 1. Gemini har ayat ka tarjuma Roman Urdu ke saath *Urdu script* me bhi banata hai (`urdu_script`), kyunke awaaz Urdu script behtar parhti hai.
-2. Button dabane par **Gemini text-to-speech** (`gemini-3.8-flash-tts`, phir `gemini-3.8-flash-lite-tts`) us Urdu text ki audio banata hai. Wahi key chalti hai jo text ke liye hai.
-3. Audio ek baar ban jaye to us session me dobara dabane par foran chalti hai (dobara Gemini nahi bulata).
-4. Agar Gemini awaaz na bana sake (limit, internet) to device ki apni Urdu awaaz istemal hoti hai, agar device me ho. Warna chhota sa message aata hai: "Awaaz abhi nahi chal saki. Thori der baad dobara koshish karein."
+2. Button dabane par **Gemini text-to-speech** (pehle tez `gemini-3.8-flash-lite-tts`, na chale to `gemini-3.8-flash-tts`) us Urdu text ki audio banata hai. Wahi key chalti hai jo text ke liye hai.
+3. **Tezi ke liye:** pehli ayat ki awaaz tab hi background me banni shuru ho jati hai jab tarjuma aa jata hai, yani aap parh rahe hote hain aur awaaz tayyar ho rahi hoti hai. "Tarjuma sunein" dabate hi aksar foran chal jati hai.
+4. Audio ek baar ban jaye to us session me dobara dabane par foran chalti hai (dobara Gemini nahi bulata).
+5. Agar Gemini awaaz na bana sake (limit, internet) to device ki apni Urdu awaaz istemal hoti hai, agar device me ho. Warna chhota sa message aata hai: "Awaaz abhi nahi chal saki. Thori der baad dobara koshish karein."
 
 Settings `js/config.js` me: `TTS_MODELS`, `TTS_VOICE` (default `Kore`), `TTS_STYLE`.
 
 **Zaroori note (developer ke liye):** Google ke docs me Urdu Gemini TTS ki official language list me nazar nahi aaya, isliye awaaz ki quality asal phone par sun kar dekhni chahiye. Agar Urdu script theek na parhe to option ye hai ke ayat ka tarjuma Hindi (Devanagari) script me bhi banwa kar usay parhwaya jaye, Hindi/Urdu bolne me lagbhag ek hi hain.
+
+## Raftaar (speed)
+
+- Gemini ki "sochne" ki muddat kam (`thinkingLevel: minimal`): sawal ka jawab ~9s se ~2s.
+- Tarjuma 2-2 ayat ki chhoti tolion me aata hai, har ayat tayyar hote hi screen par aa jati hai (sab ka intezar nahi). Intezar ke dauran Urdu tarjuma foran dikhta hai.
+- Pehle ban chuke sawal ki ayat aur tarjume browser me save rehte hain, dobara poochne par foran jawab.
+- Awaaz ke liye tez lite TTS model pehle, plain text (koi hidayat awaaz me parhi nahi jati).
 
 ## Awaaz se search (mic)
 

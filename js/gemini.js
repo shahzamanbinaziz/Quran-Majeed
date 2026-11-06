@@ -30,7 +30,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RETRY_STATUS = new Set([500, 502, 503, 504]); // temporary Google-side problems
 const shortMsg = (data) => String(data?.error?.message ?? data?.error ?? "").replace(/\s+/g, " ").slice(0, 140);
 
-function postDirect(model, key, system, prompt, signal, schema) {
+function postDirect(model, key, system, prompt, signal, schema, thinking) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   return fetch(url, {
     method: "POST",
@@ -44,6 +44,7 @@ function postDirect(model, key, system, prompt, signal, schema) {
         maxOutputTokens: 16384, // thinking models count their "thinking" tokens in here too
         responseMimeType: "application/json",
         ...(schema ? { responseSchema: schema } : {}),
+        ...(thinking ? { thinkingConfig: { thinkingLevel: "minimal" } } : {}), // much faster; dropped automatically if a model rejects it
       },
     }),
   });
@@ -88,15 +89,16 @@ async function callGemini({ system, prompt, signal, schema }) {
   if (!key && !CONFIG.WORKER_URL) throw fail("NO_KEY", "Gemini abhi set nahi hai. Settings me apni Gemini API key daalein.");
 
   const models = key ? CONFIG.GEMINI_MODELS : [null]; // the Worker picks its own model
-  let withSchema = Boolean(schema); // if a model rejects the schema (400) we drop it and ask again without
+  let withSchema = Boolean(schema); // optional extras: if a model rejects one (400) we drop it and ask again
+  let withThinking = true;
   let last = null;
   for (const model of models) {
-    let retried = false, dropped = false;
+    let retried = false;
     for (;;) {
       const sch = withSchema ? schema : null;
       let res;
       try {
-        res = key ? await postDirect(model, key, system, prompt, signal, sch) : await postWorker(system, prompt, signal, sch);
+        res = key ? await postDirect(model, key, system, prompt, signal, sch, withThinking) : await postWorker(system, prompt, signal, sch);
       } catch (e) {
         if (e.name === "AbortError") throw e;
         throw fail("NETWORK", "Internet ya server se rabta nahi ho saka. Connection check karke dobara koshish karein.");
@@ -106,8 +108,11 @@ async function callGemini({ system, prompt, signal, schema }) {
       if (res.ok) return extractText(data);
 
       last = { status: res.status, msg: shortMsg(data) };
-      if (RETRY_STATUS.has(res.status) && !retried) { retried = true; await sleep(1200); continue; } // one quick retry
-      if (res.status === 400 && withSchema && !dropped && !/api key/i.test(last.msg)) { withSchema = false; dropped = true; continue; }
+      if (RETRY_STATUS.has(res.status) && !retried) { retried = true; await sleep(500); continue; } // one quick retry
+      if (res.status === 400 && !/api key/i.test(last.msg) && (withThinking || withSchema)) {
+        if (withThinking) withThinking = false; else withSchema = false;
+        continue;
+      }
       break;
     }
     // A wrong or refused key will fail on every model: stop. Anything else (503, 429, 404...): try the next model.
@@ -163,7 +168,7 @@ Return ONLY valid JSON of exactly this shape:
 
 Rules:
 - If the user is quoting or transliterating part of a specific ayah (for example "qul huwallahu ahad"), set "mode":"ayah" and return that ayah first, then at most the next 2 ayat if they naturally continue it.
-- Otherwise "mode":"topic": return the 5 to 8 most relevant ayat from the WHOLE Quran, the most direct first, covering different aspects of the question (hukm, fazilat, tareeqa, warning, example...). Prefer clear, direct ayat over distant ones.
+- Otherwise "mode":"topic": return the 5 or 6 most relevant ayat from the WHOLE Quran, the most direct first, covering different aspects of the question (hukm, fazilat, tareeqa, warning, example...). Prefer clear, direct ayat over distant ones.
 - Surah numbers are 1-114 and the ayah number must exist in that surah. If you are not sure about an exact reference, leave it out. Fewer correct ayat are better than many doubtful ones.
 - "start": the first 3 to 6 Arabic words of that ayah exactly as written in the Mushaf (harakat optional). It is used to verify your reference, so it must be accurate.
 - "why": one short Roman Urdu line (maximum 15 words) saying how this ayah relates to the question.
@@ -193,7 +198,27 @@ const salvageFind = (text) => {
   return ayat.length ? { mode: looseString(text, "mode"), intro: looseString(text, "intro"), ayat } : null;
 };
 
+const FIND_CACHE = "qm_find_v1", FIND_TTL = 30 * 24 * 3600 * 1000, FIND_MAX = 80;
+const readFind = () => { try { return JSON.parse(localStorage.getItem(FIND_CACHE) || "{}"); } catch { return {}; } };
+
 export async function findAyat(query, signal) {
+  const ck = query.toLowerCase().replace(/\s+/g, " ").trim();
+  const hit = readFind()[ck];
+  if (hit && Date.now() - hit.t < FIND_TTL) return hit.v; // same question asked before: instant
+  const result = await findAyatFresh(query, signal);
+  if (result.ayat.length) {
+    try {
+      const all = readFind();
+      all[ck] = { t: Date.now(), v: result };
+      const keys = Object.keys(all);
+      if (keys.length > FIND_MAX) for (const k of keys.slice(0, keys.length - FIND_MAX)) delete all[k];
+      localStorage.setItem(FIND_CACHE, JSON.stringify(all));
+    } catch { /* storage full or blocked: caching is optional */ }
+  }
+  return result;
+}
+
+async function findAyatFresh(query, signal) {
   let data = await askJson({ system: FIND_SYSTEM, prompt: `User message:\n"""${query.slice(0, 500)}"""`, signal, schema: FIND_SCHEMA, salvage: salvageFind });
   if (Array.isArray(data)) data = { ayat: data };
   const ayat = (Array.isArray(data.ayat) ? data.ayat : [])
@@ -249,8 +274,9 @@ export const romanCache = () => readCache(); // {id: {r, u}}
 /**
  * items: [{id, arabic, urdu}]  ->  Map(id -> {roman, urdu}) (urdu = the same translation in Urdu script, may be "").
  * Results are cached in the browser, so a repeated ayah costs no Gemini call.
+ * onPart(map) is called as soon as each small batch is ready, so cards can fill in one by one.
  */
-export async function translateAyat(items, signal) {
+export async function translateAyat(items, signal, onPart) {
   const out = new Map();
   const cache = readCache();
   const missing = [];
@@ -261,7 +287,7 @@ export async function translateAyat(items, signal) {
   }
   if (!missing.length) return out;
 
-  const CHUNK = 5;
+  const CHUNK = 2; // small batches: the first cards appear after ~1.5 s instead of waiting for all
   const chunks = [];
   for (let i = 0; i < missing.length; i += CHUNK) chunks.push(missing.slice(i, i + CHUNK));
 
@@ -281,10 +307,13 @@ export async function translateAyat(items, signal) {
           { roman: String(t.roman_urdu ?? "").trim(), urdu: String(t.urdu_script ?? "").trim() },
         ])
       );
+      const part = new Map();
       for (const it of chunk) {
         const t = got.get(it.id);
-        if (t?.roman) { out.set(it.id, t); cache[it.id] = { r: t.roman, u: t.urdu }; }
+        if (t?.roman) { out.set(it.id, t); part.set(it.id, t); cache[it.id] = { r: t.roman, u: t.urdu }; }
       }
+      writeCache(cache);
+      if (part.size) onPart?.(part);
     })
   );
   writeCache(cache);
@@ -304,7 +333,7 @@ function ttsRequest(shape, model, key, text, signal) {
     return fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST", signal, headers,
       body: JSON.stringify({
-        contents: [{ parts: [{ text: `${CONFIG.TTS_STYLE}:\n${text}` }] }],
+        contents: [{ parts: [{ text }] }], // plain text only: anything added in front would be read aloud
         generationConfig: {
           responseModalities: ["AUDIO"],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: CONFIG.TTS_VOICE } } },
@@ -317,7 +346,7 @@ function ttsRequest(shape, model, key, text, signal) {
     method: "POST", signal, headers,
     body: JSON.stringify({
       model,
-      input: [{ type: "user_input", content: [{ type: "text", text, annotations: [{ type: "speech_metadata", style: CONFIG.TTS_STYLE.replace(/^Say /, "") }] }] }],
+      input: [{ type: "user_input", content: [{ type: "text", text, annotations: [{ type: "speech_metadata", style: CONFIG.TTS_STYLE }] }] }],
       response_format: { type: "audio" },
       generation_config: { speech_config: [{ voice: CONFIG.TTS_VOICE }] },
     }),

@@ -102,12 +102,20 @@ function showPending(card) {
   p.replaceChildren("Roman Urdu tarjuma ban raha hai");
 }
 
+// While Roman Urdu is being made, the Urdu translation from our own data is shown at once (no waiting).
+function showInterim(card, urduText) {
+  if (!urduText) return;
+  const p = $('[data-role="roman"]', card);
+  if (!p.classList.contains("pending")) return;
+  p.replaceChildren("Roman Urdu tarjuma ban raha hai", h("span", { class: "urdu-script", lang: "ur", dir: "rtl" }, urduText));
+}
+
 async function translateCards(cards, run, signal) {
   const cache = AI.romanCache();
   const todo = [];
   for (const card of cards) {
     const c = cache[card.dataset.id];
-    if (c?.r) setRoman(card, c.r, c.u || "");
+    if (c?.r) { setRoman(card, c.r, c.u || ""); prepareVoice(card, run); }
     else todo.push(card);
   }
   if (!todo.length) return;
@@ -116,22 +124,32 @@ async function translateCards(cards, run, signal) {
   try { urdu = await loadUrdu(Q); } catch { /* the Arabic alone is enough for Gemini */ }
   if (run !== runId) return;
   const urduOf = (card) => (urdu ? urdu[card.dataset.i] : "");
+  for (const card of todo) showInterim(card, urduOf(card));
 
   if (!AI.isReady()) {
     for (const card of todo) setFallback(card, urduOf(card), "Roman Urdu ke liye Settings me Gemini API key daalein. Tab tak Urdu tarjuma:");
     return;
   }
-  try {
-    const items = todo.map((c) => ({ id: c.dataset.id, arabic: Q.rows[c.dataset.i][2], urdu: urduOf(c) }));
-    const map = await AI.translateAyat(items, signal);
+  const done = new Set();
+  const apply = (map) => { // called for every small batch as soon as it is ready
     if (run !== runId) return;
     for (const card of todo) {
       const t = map.get(card.dataset.id);
-      t ? setRoman(card, t.roman, t.urdu) : setFallback(card, urduOf(card), "Is ayat ka Roman Urdu nahi ban saka. Urdu tarjuma:");
+      if (!t || done.has(card)) continue;
+      done.add(card);
+      setRoman(card, t.roman, t.urdu);
+      prepareVoice(card, run);
     }
+  };
+  try {
+    const items = todo.map((c) => ({ id: c.dataset.id, arabic: Q.rows[c.dataset.i][2], urdu: urduOf(c) }));
+    const map = await AI.translateAyat(items, signal, apply);
+    if (run !== runId) return;
+    apply(map);
+    for (const card of todo) if (!done.has(card)) setFallback(card, urduOf(card), "Is ayat ka Roman Urdu nahi ban saka. Urdu tarjuma:");
   } catch (e) {
     if (e.name === "AbortError" || run !== runId) return;
-    for (const card of todo) setFallback(card, urduOf(card), `${explain(e)} Urdu tarjuma:`);
+    for (const card of todo) if (!done.has(card)) setFallback(card, urduOf(card), `${explain(e)} Urdu tarjuma:`);
     if (e.code === "NO_KEY" || e.code === "BAD_KEY") openSettings();
   }
 }
@@ -212,7 +230,45 @@ function toggleAudio(card, btn) {
 // Gemini text-to-speech first (nothing to install on the phone). If that is not possible the
 // browser's own Urdu voice is used when the device has one.
 const spoken = new Map(); // "id:length" -> blob url, so a second tap plays instantly and costs nothing
+const spokenPending = new Map(); // same key -> promise of a voice that is being made right now
 let speechCtl = null;
+
+function speechUrl(key, text, signal) {
+  const ready = spoken.get(key);
+  if (ready) return Promise.resolve(ready);
+  let pending = spokenPending.get(key);
+  if (!pending) {
+    pending = AI.synthesize(text, signal)
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        if (spoken.size >= 30) { const [oldKey, oldUrl] = spoken.entries().next().value; URL.revokeObjectURL(oldUrl); spoken.delete(oldKey); }
+        spoken.set(key, url);
+        return url;
+      })
+      .finally(() => spokenPending.delete(key));
+    pending.catch(() => {}); // a failed preparation is not an error until somebody taps the button
+    spokenPending.set(key, pending);
+  }
+  return pending;
+}
+
+// Stops waiting for a shared promise without cancelling the work behind it.
+const abortable = (promise, signal) =>
+  new Promise((resolve, reject) => {
+    const abort = () => reject(new DOMException("Aborted", "AbortError"));
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject);
+  });
+
+// Gemini needs ~4 s to make a voice. So the voice of the FIRST ayah is made in the background while
+// the person reads: by the time "Tarjuma sunein" is tapped it is usually ready and plays at once.
+function prepareVoice(card, run) {
+  if (!AI.canSpeak() || card !== el.results.firstElementChild || run !== runId) return;
+  const text = $('[data-role="roman"]', card).dataset.urdu;
+  if (!text) return;
+  speechUrl(`${card.dataset.id}:${text.length}`, text, controller?.signal);
+}
 
 function getVoices() {
   return new Promise((resolve) => {
@@ -291,13 +347,7 @@ async function toggleSpeech(card, btn) {
   if (AI.canSpeak()) {
     try {
       speechCtl = new AbortController();
-      const key = `${card.dataset.id}:${text.length}`;
-      let url = spoken.get(key);
-      if (!url) {
-        url = URL.createObjectURL(await AI.synthesize(text, speechCtl.signal));
-        if (spoken.size >= 30) { const [oldKey, oldUrl] = spoken.entries().next().value; URL.revokeObjectURL(oldUrl); spoken.delete(oldKey); }
-        spoken.set(key, url);
-      }
+      const url = await abortable(speechUrl(`${card.dataset.id}:${text.length}`, text, controller?.signal), speechCtl.signal);
       if (token !== speechToken) return;
       btn.removeAttribute("aria-busy");
       audio = unlocked;

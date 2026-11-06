@@ -12,10 +12,12 @@ export const CONFIG = {
   GEMINI_MODELS: ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"],
 
   // Spoken translation: Gemini text-to-speech (works on every phone, nothing to install).
-  // Tried in this order; the next one is used if a model is busy or over its limit.
-  TTS_MODELS: ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"],
+  // "lite" is the fast one (measured ~4s even for long text, the normal one ~9s), so it goes first.
+  TTS_MODELS: ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"],
   TTS_VOICE: "Kore",
-  TTS_STYLE: "Say slowly, calmly and clearly, in Urdu with a natural Pakistani accent",
+  // Used only by the "interactions" endpoint, where style is a separate field and is NOT read aloud.
+  // (In the plain endpoint any instruction put in front of the text gets spoken, so none is added there.)
+  TTS_STYLE: "slowly, calmly and clearly, in Urdu with a natural Pakistani accent",
 
   // Recitation audio (one mp3 per ayah). Optional: the Sunein button simply fails quietly if offline.
   AUDIO_BASE: "https://everyayah.com/data/Alafasy_128kbps/",
