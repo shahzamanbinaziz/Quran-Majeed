@@ -46,60 +46,53 @@ Agar Gemini na chale (limit, internet, key nahi) to ayat phir bhi dikhti hai aur
 ```
 index.html            homepage
 css/style.css         design (mobile + desktop, light/dark)
-js/config.js          settings (Worker URL yahan daalna hai)
+js/config.js          settings (model, optional Worker URL)
+js/site-key.js        khali placeholder; deploy ke waqt GitHub Secret se bharta hai
 js/search.js          Arabic search engine (browser me)
 js/gemini.js          Gemini prompts + Roman Urdu cache
 js/app.js             search box, mic, cards, settings
 data/                 poora Quran (Arabic + search index + Urdu reference + surah names)
 fonts/                Amiri Quran font (SIL OFL licence)
-worker/               Cloudflare Worker: Gemini API key ko mehfooz rakhta hai
+worker/               OPTIONAL Cloudflare Worker (key server par rakhne ke liye)
+.github/workflows/    GitHub Pages deploy + secret injection
 scripts/build-data.py data files dobara banane ki script
 scripts/test-search.mjs  search ka self-test
 ```
 
 ---
 
-## Step 1: Website GitHub Pages par chalayein
+## Step 1: Gemini key ko GitHub Secret me rakhein
 
-1. GitHub repo me **Settings -> Pages** kholein.
-2. **Source: Deploy from a branch**, **Branch: `main`**, folder **`/ (root)`** -> **Save**.
-3. 1-2 minute baad website yahan khulegi: `https://shahzamanbinaziz.github.io/Quran-Majeed/`
+1. Key banayein: <https://aistudio.google.com/apikey>
+2. Repo me **Settings -> Secrets and variables -> Actions -> New repository secret**
+   - Name: `GEMINI_API_KEY`
+   - Secret: apni `AIza...` key
+3. Key repo ki kisi file me **nahi** likhni. `js/site-key.js` khali (`""`) rehti hai.
 
-Is waqt Arabic search chal jayegi. Roman Urdu aur sawal-se-search ke liye Gemini chahiye (Step 2 ya Step 3).
+## Step 2: GitHub Pages ko Actions se chalayein
 
-## Step 2: Gemini ko mehfooz tareeqe se jodein (Cloudflare Worker, muft)
+1. **Settings -> Pages -> Build and deployment -> Source: GitHub Actions** chunein.
+2. `main` par har push par `.github/workflows/pages.yml` chalta hai: wo website ki files copy karta hai, secret se key `js/site-key.js` me daalta hai (sirf deploy hone wali copy me, repo me nahi), aur site publish kar deta hai.
+3. **Actions** tab me workflow ka green tick dekhein. Phir site yahan khulegi: `https://shahzamanbinaziz.github.io/Quran-Majeed/`
 
-**Zaroori baat:** GitHub Pages ek *public* website hai. Gemini API key ko JavaScript me likhenge to koi bhi usay dekh kar chura sakta hai. Isliye key ek chhote server (Worker) me rakhi jati hai.
+Secret baad me badlein to **Actions -> Deploy to GitHub Pages -> Run workflow** dabayein.
 
-1. Gemini API key banayein: <https://aistudio.google.com/apikey>
-2. Cloudflare par muft account banayein: <https://dash.cloudflare.com>
-3. Computer par (Node.js chahiye) terminal me:
+## Step 3 (BOHAT ZAROORI): key ko sirf apni website tak mehdood karein
 
-```bash
-cd worker
-npx wrangler login
-npx wrangler deploy
-npx wrangler secret put GEMINI_API_KEY     # yahan apni Gemini key paste karein
-```
+GitHub Pages sirf static files dikhata hai, isliye deploy hone ke baad key website ki JavaScript me hoti hai aur browser ka "View Source" dekhne wala use dekh sakta hai. Isko roknay ka koi tareeqa nahi, lekin nuqsan kam kiya ja sakta hai:
 
-4. `deploy` ke baad ek URL milega, jaise `https://quran-majeed-api.APKANAAM.workers.dev`
-5. `js/config.js` kholein aur daalein:
+1. <https://console.cloud.google.com/apis/credentials> par us key ko kholein (wohi project jo AI Studio ne banaya).
+2. **Application restrictions -> Websites (HTTP referrers)** chunein aur add karein: `https://shahzamanbinaziz.github.io/*` (aur local test ke liye chahein to `http://localhost:8000/*`).
+3. **API restrictions -> Restrict key** me sirf **Generative Language API** rakhein.
+4. Usage/quota ki hadd kam rakhein aur billing band rakhein (muft tier), taake ghalat istemal hone par bhi nuqsan na ho.
 
-```js
-WORKER_URL: "https://quran-majeed-api.APKANAAM.workers.dev",
-```
+Phir bhi samajh lein: referrer restriction ek roka-tok hai, mukammal hifazat nahi (curl se referrer jhoota bheja ja sakta hai). Isliye key par *kabhi paid billing na lagayein* aur agar abuse nazar aaye to key delete karke nayi bana lein.
 
-6. Commit karke push kar dein. Bas.
+**Agar baad me mehfooz banana ho:** `worker/` folder me Cloudflare Worker ka tayyar code maujood hai. Us me key server par rehti hai. Uska URL `js/config.js` me `WORKER_URL` me daalne se website Worker ke zariye chalegi. Ye zaroori nahi, sirf optional hai.
 
-`worker/wrangler.toml` me `ALLOWED_ORIGINS` pehle se `https://shahzamanbinaziz.github.io` par set hai. Agar apna domain lagayein to usay wahan badal dein.
+## Step 4 (optional): Sirf apne liye, apni key browser me
 
-**Kuch zaroori hifazati baatein:**
-- Worker sirf isi website se aane wali requests maanta hai (`ALLOWED_ORIGINS`), lekin ye origin check curl jaise tools se bypass ho sakta hai. Isliye Google AI Studio me key par **quota/limit** zaroor lagayein, aur Cloudflare dashboard me **Rate limiting** rule laga dein, taake koi aap ka muft quota na khatam kar sake.
-- Key kabhi `config.js` ya kisi bhi file me commit na karein.
-
-## Step 3 (optional): Bina server ke, apni key se
-
-Agar Worker nahi banana, to website par **gear (Settings)** icon dabayein aur apni Gemini key paste kar dein. Key sirf us browser me `localStorage` me rehti hai. Ye sirf aap ke apne istemal ke liye theek hai; public visitors ke liye Step 2 chahiye.
+Website par **gear (Settings)** icon dabayein aur apni Gemini key paste karein. Ye key sirf us browser me rehti hai aur site wali key par fauqiyat rakhti hai.
 
 ---
 

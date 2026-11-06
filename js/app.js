@@ -389,7 +389,7 @@ el.mic.addEventListener("click", toggleMic);
 // ---------- settings ----------
 function openSettings() {
   if (el.settings.open) return;
-  const modeText = { "own-key": "Abhi aap ki apni Gemini key istemal ho rahi hai.", worker: "Abhi website ka apna server istemal ho raha hai. Chahein to apni key bhi daal sakte hain.", none: "Roman Urdu tarjume aur sawal se search ke liye Gemini API key chahiye." };
+  const modeText = { "own-key": "Abhi aap ki apni Gemini key istemal ho rahi hai.", "site-key": "Abhi website ki apni Gemini key istemal ho rahi hai. Chahein to apni key bhi daal sakte hain.", worker: "Abhi website ka apna server istemal ho raha hai. Chahein to apni key bhi daal sakte hain.", none: "Roman Urdu tarjume aur sawal se search ke liye Gemini API key chahiye." };
   el.settingsMode.textContent = modeText[AI.mode()];
   el.key.value = "";
   el.key.placeholder = AI.getUserKey() ? "Key save hai (naye se badalne ke liye likhein)" : "AIza...";

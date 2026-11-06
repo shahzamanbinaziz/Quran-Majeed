@@ -1,9 +1,11 @@
 // Everything that talks to Gemini lives here: the prompts, the transport and the cache.
 //
-// Two ways to reach Gemini:
-//   1) CONFIG.WORKER_URL  -> your Cloudflare Worker (secret key stays on the server)  [public site]
-//   2) a personal key the visitor pastes in Settings -> called directly from the browser [no server needed]
+// Ways to reach Gemini (first one that exists is used):
+//   1) a personal key the visitor pastes in Settings        -> called directly from the browser
+//   2) SITE_KEY (GitHub secret injected at deploy time)     -> called directly from the browser
+//   3) CONFIG.WORKER_URL (optional proxy server)            -> key stays on the server
 import { CONFIG } from "./config.js";
+import { SITE_KEY } from "./site-key.js";
 
 const KEY_STORE = "qm_gemini_key";
 const CACHE_STORE = "qm_roman_v1";
@@ -12,8 +14,9 @@ const CACHE_MAX = 600;
 // ---------- key handling ----------
 export const getUserKey = () => { try { return localStorage.getItem(KEY_STORE) || ""; } catch { return ""; } };
 export const setUserKey = (k) => { try { k ? localStorage.setItem(KEY_STORE, k.trim()) : localStorage.removeItem(KEY_STORE); } catch { /* private mode */ } };
-export const isReady = () => Boolean(getUserKey() || CONFIG.WORKER_URL);
-export const mode = () => (getUserKey() ? "own-key" : CONFIG.WORKER_URL ? "worker" : "none");
+const activeKey = () => getUserKey() || SITE_KEY || "";
+export const isReady = () => Boolean(activeKey() || CONFIG.WORKER_URL);
+export const mode = () => (getUserKey() ? "own-key" : SITE_KEY ? "site-key" : CONFIG.WORKER_URL ? "worker" : "none");
 
 function fail(code, userMessage) {
   const e = new Error(code);
@@ -24,7 +27,7 @@ function fail(code, userMessage) {
 
 // ---------- transport ----------
 async function callGemini({ system, prompt, signal }) {
-  const key = getUserKey();
+  const key = activeKey();
   if (!key && !CONFIG.WORKER_URL) throw fail("NO_KEY", "Gemini abhi set nahi hai. Settings me apni Gemini API key daalein.");
 
   let res;
@@ -61,7 +64,7 @@ async function callGemini({ system, prompt, signal }) {
     const msg = (data && (data.error?.message || data.error)) || "";
     if (res.status === 429) throw fail("QUOTA", "Gemini ki limit poori ho gayi hai. Thori der baad dobara koshish karein.");
     if (res.status === 400 && /api key/i.test(String(msg))) throw fail("BAD_KEY", "Gemini API key galat hai. Settings me sahi key daalein.");
-    if (res.status === 401 || res.status === 403) throw fail("DENIED", key ? "Gemini ne is key ko qubool nahi kiya. Key check karein." : "Server ne is website ko ijazat nahi di (ALLOWED_ORIGINS check karein).");
+    if (res.status === 401 || res.status === 403) throw fail("DENIED", key ? "Gemini ne is key ko qubool nahi kiya. Key check karein (agar key par website restriction lagayi hai to wahan sahi website likhi ho)." : "Server ne is website ko ijazat nahi di (ALLOWED_ORIGINS check karein).");
     throw fail("HTTP_" + res.status, `Gemini se jawab nahi aaya (${res.status}). Dobara koshish karein.`);
   }
 
