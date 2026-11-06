@@ -26,49 +26,35 @@ function fail(code, userMessage) {
 }
 
 // ---------- transport ----------
-async function callGemini({ system, prompt, signal }) {
-  const key = activeKey();
-  if (!key && !CONFIG.WORKER_URL) throw fail("NO_KEY", "Gemini abhi set nahi hai. Settings me apni Gemini API key daalein.");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const RETRY_STATUS = new Set([500, 502, 503, 504]); // temporary Google-side problems
+const shortMsg = (data) => String(data?.error?.message ?? data?.error ?? "").replace(/\s+/g, " ").slice(0, 140);
 
-  let res;
-  try {
-    if (key) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(CONFIG.GEMINI_MODEL)}:generateContent`;
-      res = await fetch(url, {
-        method: "POST",
-        signal,
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json" },
-        }),
-      });
-    } else {
-      res = await fetch(CONFIG.WORKER_URL, {
-        method: "POST",
-        signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ system, prompt }),
-      });
-    }
-  } catch (e) {
-    if (e.name === "AbortError") throw e;
-    throw fail("NETWORK", "Internet ya server se rabta nahi ho saka. Connection check karke dobara koshish karein.");
-  }
+function postDirect(model, key, system, prompt, signal) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  return fetch(url, {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json" },
+    }),
+  });
+}
 
-  let data = null;
-  try { data = await res.json(); } catch { /* not json */ }
+function postWorker(system, prompt, signal) {
+  return fetch(CONFIG.WORKER_URL, {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system, prompt }),
+  });
+}
 
-  if (!res.ok) {
-    const msg = (data && (data.error?.message || data.error)) || "";
-    if (res.status === 429) throw fail("QUOTA", "Gemini ki limit poori ho gayi hai. Thori der baad dobara koshish karein.");
-    if (res.status === 400 && /api key/i.test(String(msg))) throw fail("BAD_KEY", "Gemini API key galat hai. Settings me sahi key daalein.");
-    if (res.status === 401 || res.status === 403) throw fail("DENIED", key ? "Gemini ne is key ko qubool nahi kiya. Key check karein (agar key par website restriction lagayi hai to wahan sahi website likhi ho)." : "Server ne is website ko ijazat nahi di (ALLOWED_ORIGINS check karein).");
-    throw fail("HTTP_" + res.status, `Gemini se jawab nahi aaya (${res.status}). Dobara koshish karein.`);
-  }
-
-  // Worker answers {text}; Gemini answers {candidates:[...]}
+// Worker answers {text}; Gemini answers {candidates:[...]}
+function extractText(data) {
   if (typeof data?.text === "string") return data.text;
   const cand = data?.candidates?.[0];
   const text = (cand?.content?.parts ?? []).filter((p) => !p.thought).map((p) => p.text ?? "").join("");
@@ -77,6 +63,48 @@ async function callGemini({ system, prompt, signal }) {
     throw fail("EMPTY", `Gemini ne jawab nahi diya (${why}). Sawal thora badal kar dekhein.`);
   }
   return text;
+}
+
+function httpError(last, usingOwnKey) {
+  const { status, msg } = last;
+  if (status === 429) return fail("QUOTA", "Gemini ki limit poori ho gayi hai. Thori der baad dobara koshish karein.");
+  if (status === 400 && /api key/i.test(msg)) return fail("BAD_KEY", "Gemini API key galat hai. Settings me sahi key daalein.");
+  if (status === 401 || status === 403) {
+    return fail("DENIED", usingOwnKey
+      ? `Gemini ne is key ko qubool nahi kiya (${status}). Key check karein; agar key par website restriction hai to wahan sahi website likhi ho. ${msg}`.trim()
+      : "Server ne is website ko ijazat nahi di (ALLOWED_ORIGINS check karein).");
+  }
+  if (RETRY_STATUS.has(status)) return fail("BUSY", `Gemini abhi masroof hai (${status}). Thori der baad dobara koshish karein. ${msg}`.trim());
+  return fail("HTTP_" + status, `Gemini se jawab nahi aaya (${status}). ${msg}`.trim());
+}
+
+async function callGemini({ system, prompt, signal }) {
+  const key = activeKey();
+  if (!key && !CONFIG.WORKER_URL) throw fail("NO_KEY", "Gemini abhi set nahi hai. Settings me apni Gemini API key daalein.");
+
+  const models = key ? CONFIG.GEMINI_MODELS : [null]; // the Worker picks its own model
+  let last = null;
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let res;
+      try {
+        res = key ? await postDirect(model, key, system, prompt, signal) : await postWorker(system, prompt, signal);
+      } catch (e) {
+        if (e.name === "AbortError") throw e;
+        throw fail("NETWORK", "Internet ya server se rabta nahi ho saka. Connection check karke dobara koshish karein.");
+      }
+      let data = null;
+      try { data = await res.json(); } catch { /* not json */ }
+      if (res.ok) return extractText(data);
+
+      last = { status: res.status, msg: shortMsg(data) };
+      if (RETRY_STATUS.has(res.status) && attempt === 0) { await sleep(1200); continue; } // one quick retry
+      break;
+    }
+    // A wrong or refused key will fail on every model: stop. Anything else (503, 429, 404...): try the next model.
+    if (last.status === 401 || last.status === 403 || (last.status === 400 && /api key/i.test(last.msg))) break;
+  }
+  throw httpError(last, Boolean(key));
 }
 
 function parseJson(text) {

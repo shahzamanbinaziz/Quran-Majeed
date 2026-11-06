@@ -6,9 +6,10 @@ export const CONFIG = {
   // Gemini API key in Settings (the key stays in their own browser).
   WORKER_URL: "",
 
-  // Gemini model used when a visitor uses their own key.
-  // (The Worker has its own GEMINI_MODEL variable in worker/wrangler.toml.)
-  GEMINI_MODEL: "gemini-3.8-flash",
+  // Gemini models used when the browser calls Gemini directly, in order of preference.
+  // If one is overloaded (503), rate limited (429) or unknown (404) the next one is tried automatically.
+  // The "flash-lite" models are the fast, cheap / free-tier friendly ones.
+  GEMINI_MODELS: ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"],
 
   // Recitation audio (one mp3 per ayah). Optional: the Sunein button simply fails quietly if offline.
   AUDIO_BASE: "https://everyayah.com/data/Alafasy_128kbps/",

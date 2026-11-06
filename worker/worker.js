@@ -39,7 +39,7 @@ export default {
       return reply({ error: "system and prompt (strings) are required" }, 400);
     }
 
-    const model = env.GEMINI_MODEL || "gemini-3.8-flash";
+    const model = env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     let upstream;
     try {
       upstream = await fetch(
