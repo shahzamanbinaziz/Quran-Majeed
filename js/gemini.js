@@ -30,7 +30,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RETRY_STATUS = new Set([500, 502, 503, 504]); // temporary Google-side problems
 const shortMsg = (data) => String(data?.error?.message ?? data?.error ?? "").replace(/\s+/g, " ").slice(0, 140);
 
-function postDirect(model, key, system, prompt, signal) {
+function postDirect(model, key, system, prompt, signal, schema) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   return fetch(url, {
     method: "POST",
@@ -39,17 +39,22 @@ function postDirect(model, key, system, prompt, signal) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json" },
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 16384, // thinking models count their "thinking" tokens in here too
+        responseMimeType: "application/json",
+        ...(schema ? { responseSchema: schema } : {}),
+      },
     }),
   });
 }
 
-function postWorker(system, prompt, signal) {
+function postWorker(system, prompt, signal, schema) {
   return fetch(CONFIG.WORKER_URL, {
     method: "POST",
     signal,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ system, prompt }),
+    body: JSON.stringify({ system, prompt, ...(schema ? { schema } : {}) }),
   });
 }
 
@@ -78,17 +83,20 @@ function httpError(last, usingOwnKey) {
   return fail("HTTP_" + status, `Gemini se jawab nahi aaya (${status}). ${msg}`.trim());
 }
 
-async function callGemini({ system, prompt, signal }) {
+async function callGemini({ system, prompt, signal, schema }) {
   const key = activeKey();
   if (!key && !CONFIG.WORKER_URL) throw fail("NO_KEY", "Gemini abhi set nahi hai. Settings me apni Gemini API key daalein.");
 
   const models = key ? CONFIG.GEMINI_MODELS : [null]; // the Worker picks its own model
+  let withSchema = Boolean(schema); // if a model rejects the schema (400) we drop it and ask again without
   let last = null;
   for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    let retried = false, dropped = false;
+    for (;;) {
+      const sch = withSchema ? schema : null;
       let res;
       try {
-        res = key ? await postDirect(model, key, system, prompt, signal) : await postWorker(system, prompt, signal);
+        res = key ? await postDirect(model, key, system, prompt, signal, sch) : await postWorker(system, prompt, signal, sch);
       } catch (e) {
         if (e.name === "AbortError") throw e;
         throw fail("NETWORK", "Internet ya server se rabta nahi ho saka. Connection check karke dobara koshish karein.");
@@ -98,7 +106,8 @@ async function callGemini({ system, prompt, signal }) {
       if (res.ok) return extractText(data);
 
       last = { status: res.status, msg: shortMsg(data) };
-      if (RETRY_STATUS.has(res.status) && attempt === 0) { await sleep(1200); continue; } // one quick retry
+      if (RETRY_STATUS.has(res.status) && !retried) { retried = true; await sleep(1200); continue; } // one quick retry
+      if (res.status === 400 && withSchema && !dropped && !/api key/i.test(last.msg)) { withSchema = false; dropped = true; continue; }
       break;
     }
     // A wrong or refused key will fail on every model: stop. Anything else (503, 429, 404...): try the next model.
@@ -114,7 +123,34 @@ function parseJson(text) {
   if (a !== -1 && b > a) {
     try { return JSON.parse(clean.slice(a, b + 1)); } catch { /* fall through */ }
   }
-  throw fail("BAD_JSON", "Gemini ka jawab samajh nahi aaya. Dobara koshish karein.");
+  throw fail("BAD_JSON", "Gemini ka jawab samajh nahi aaya.");
+}
+
+// Small complete {...} objects inside a damaged / cut-off answer. Lets us keep what is usable.
+function looseObjects(text) {
+  const out = [];
+  for (const piece of text.match(/\{[^{}]*\}/g) ?? []) {
+    try { out.push(JSON.parse(piece)); } catch { /* skip */ }
+  }
+  return out;
+}
+const looseString = (text, field) => {
+  const m = text.match(new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+  try { return m ? JSON.parse(`"${m[1]}"`) : ""; } catch { return m ? m[1] : ""; }
+};
+
+/** Ask Gemini for JSON. Retries once if the answer is unusable; salvage(text) may rescue a damaged answer. */
+async function askJson({ system, prompt, signal, schema, salvage }) {
+  let rawStart = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const text = await callGemini({ system, prompt, signal, schema });
+    try { return parseJson(text); } catch { /* damaged answer */ }
+    const saved = salvage?.(text);
+    if (saved) return saved;
+    console.warn("Gemini answer could not be read:", text);
+    rawStart = text.trim().replace(/\s+/g, " ").slice(0, 80);
+  }
+  throw fail("BAD_JSON", `Gemini ka jawab samajh nahi aaya. Dobara koshish karein. (Jawab ka shuru: "${rawStart}")`);
 }
 
 // ---------- 1) find the relevant ayat (references only, Arabic text comes from our own data) ----------
@@ -135,9 +171,31 @@ Rules:
 - Roman Urdu means Urdu written in English letters, e.g. "namaz ka hukm", "Allah ne farmaya".
 - If the message has nothing to do with the Quran, return {"mode":"topic","intro":"","ayat":[]}.`;
 
+const FIND_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    mode: { type: "STRING" },
+    intro: { type: "STRING" },
+    ayat: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { surah: { type: "INTEGER" }, ayah: { type: "INTEGER" }, start: { type: "STRING" }, why: { type: "STRING" } },
+        required: ["surah", "ayah", "start"],
+      },
+    },
+  },
+  required: ["mode", "ayat"],
+};
+
+const salvageFind = (text) => {
+  const ayat = looseObjects(text).filter((o) => o.surah != null && o.ayah != null);
+  return ayat.length ? { mode: looseString(text, "mode"), intro: looseString(text, "intro"), ayat } : null;
+};
+
 export async function findAyat(query, signal) {
-  const text = await callGemini({ system: FIND_SYSTEM, prompt: `User message:\n"""${query.slice(0, 500)}"""`, signal });
-  const data = parseJson(text);
+  let data = await askJson({ system: FIND_SYSTEM, prompt: `User message:\n"""${query.slice(0, 500)}"""`, signal, schema: FIND_SCHEMA, salvage: salvageFind });
+  if (Array.isArray(data)) data = { ayat: data };
   const ayat = (Array.isArray(data.ayat) ? data.ayat : [])
     .map((a) => ({ surah: Number(a.surah), ayah: Number(a.ayah), start: String(a.start ?? ""), why: String(a.why ?? "") }))
     .filter((a) => a.surah >= 1 && a.surah <= 114 && a.ayah >= 1);
@@ -154,6 +212,21 @@ Rules:
 - Output Roman Urdu only: no Urdu or Arabic script, no English words except names.
 - Exactly one translation per item, using the same id.
 Return ONLY valid JSON: {"translations":[{"id":"2:43","roman_urdu":"..."}]}`;
+
+const TRANSLATE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    translations: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { id: { type: "STRING" }, roman_urdu: { type: "STRING" } }, required: ["id", "roman_urdu"] },
+    },
+  },
+  required: ["translations"],
+};
+const salvageTranslations = (text) => {
+  const translations = looseObjects(text).filter((o) => o.id != null && o.roman_urdu);
+  return translations.length ? { translations } : null;
+};
 
 function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_STORE) || "{}"); } catch { return {}; } }
 function writeCache(obj) {
@@ -182,8 +255,14 @@ export async function translateAyat(items, signal) {
 
   const settled = await Promise.allSettled(
     chunks.map(async (chunk) => {
-      const text = await callGemini({ system: TRANSLATE_SYSTEM, prompt: JSON.stringify(chunk.map(({ id, arabic, urdu }) => ({ id, arabic, urdu }))), signal });
-      const data = parseJson(text);
+      let data = await askJson({
+        system: TRANSLATE_SYSTEM,
+        prompt: JSON.stringify(chunk.map(({ id, arabic, urdu }) => ({ id, arabic, urdu }))),
+        signal,
+        schema: TRANSLATE_SCHEMA,
+        salvage: salvageTranslations,
+      });
+      if (Array.isArray(data)) data = { translations: data };
       const got = new Map((Array.isArray(data.translations) ? data.translations : []).map((t) => [String(t.id), String(t.roman_urdu ?? "").trim()]));
       for (const it of chunk) {
         const t = got.get(it.id);

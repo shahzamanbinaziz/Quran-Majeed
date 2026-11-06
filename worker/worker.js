@@ -1,7 +1,7 @@
 // Cloudflare Worker: a small, safe door between the website and Gemini.
 // The Gemini API key lives ONLY here (as a Worker secret), never in the website files.
 //
-// Request  (POST, JSON): { "system": "...", "prompt": "..." }
+// Request  (POST, JSON): { "system": "...", "prompt": "...", "schema": {optional JSON schema} }
 // Response (JSON):       { "text": "..." }      or   { "error": "..." }
 
 const MAX_BODY_CHARS = 30000;
@@ -34,7 +34,7 @@ export default {
     } catch {
       return reply({ error: "Invalid JSON" }, 400);
     }
-    const { system, prompt } = body || {};
+    const { system, prompt, schema } = body || {};
     if (typeof system !== "string" || typeof prompt !== "string" || !system || !prompt) {
       return reply({ error: "system and prompt (strings) are required" }, 400);
     }
@@ -50,7 +50,12 @@ export default {
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: system }] },
             contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json" },
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 16384,
+              responseMimeType: "application/json",
+              ...(schema && typeof schema === "object" ? { responseSchema: schema } : {}),
+            },
           }),
         }
       );
