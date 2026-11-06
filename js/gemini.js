@@ -8,7 +8,7 @@ import { CONFIG } from "./config.js";
 import { SITE_KEY } from "./site-key.js";
 
 const KEY_STORE = "qm_gemini_key";
-const CACHE_STORE = "qm_roman_v1";
+const CACHE_STORE = "qm_roman_v2"; // {id: {r: roman urdu, u: same text in Urdu script (for speech)}}
 const CACHE_MAX = 600;
 
 // ---------- key handling ----------
@@ -206,19 +206,27 @@ export async function findAyat(query, signal) {
 const TRANSLATE_SYSTEM = `You translate ayat of the Holy Quran into Roman Urdu: Urdu written in English/Latin letters, the way Pakistanis write on WhatsApp (for example "Aur namaz qaim karo aur zakat ada karo").
 Each item has an id, the Arabic text and a reference Urdu translation (Maududi). Translate from the Arabic meaning, and use the reference Urdu translation to stay faithful to the established meaning.
 
+For every item give two versions of the SAME translation:
+- "roman_urdu": Roman Urdu (this is what the reader sees).
+- "urdu_script": exactly the same sentences and meaning written in Urdu script (Nastaliq spelling, Urdu full stop "۔"), because it is read aloud by a text-to-speech voice. Write Allah as "اللہ". Do not add or drop anything compared to roman_urdu.
+
 Rules:
 - Translate only what is in the ayah: no tafsir, no explanation, no opinions, no commentary in brackets.
 - Clear, natural, respectful Urdu. Write Allah, Rab, Rasool, Nabi, Jannat, Jahannam etc. the usual Roman Urdu way.
-- Output Roman Urdu only: no Urdu or Arabic script, no English words except names.
+- roman_urdu must be Roman Urdu only: no Urdu or Arabic script, no English words except names.
 - Exactly one translation per item, using the same id.
-Return ONLY valid JSON: {"translations":[{"id":"2:43","roman_urdu":"..."}]}`;
+Return ONLY valid JSON: {"translations":[{"id":"2:43","roman_urdu":"...","urdu_script":"..."}]}`;
 
 const TRANSLATE_SCHEMA = {
   type: "OBJECT",
   properties: {
     translations: {
       type: "ARRAY",
-      items: { type: "OBJECT", properties: { id: { type: "STRING" }, roman_urdu: { type: "STRING" } }, required: ["id", "roman_urdu"] },
+      items: {
+        type: "OBJECT",
+        properties: { id: { type: "STRING" }, roman_urdu: { type: "STRING" }, urdu_script: { type: "STRING" } },
+        required: ["id", "roman_urdu", "urdu_script"],
+      },
     },
   },
   required: ["translations"],
@@ -236,17 +244,21 @@ function writeCache(obj) {
     localStorage.setItem(CACHE_STORE, JSON.stringify(obj));
   } catch { /* storage full or blocked: caching is optional */ }
 }
-export const romanCache = () => readCache(); // {id: roman urdu}
+export const romanCache = () => readCache(); // {id: {r, u}}
 
 /**
- * items: [{id, arabic, urdu}]  ->  Map(id -> roman urdu).
+ * items: [{id, arabic, urdu}]  ->  Map(id -> {roman, urdu}) (urdu = the same translation in Urdu script, may be "").
  * Results are cached in the browser, so a repeated ayah costs no Gemini call.
  */
 export async function translateAyat(items, signal) {
   const out = new Map();
   const cache = readCache();
   const missing = [];
-  for (const it of items) (cache[it.id] ? out.set(it.id, cache[it.id]) : missing.push(it));
+  for (const it of items) {
+    const c = cache[it.id];
+    if (c?.r) out.set(it.id, { roman: c.r, urdu: c.u || "" });
+    else missing.push(it);
+  }
   if (!missing.length) return out;
 
   const CHUNK = 5;
@@ -263,10 +275,15 @@ export async function translateAyat(items, signal) {
         salvage: salvageTranslations,
       });
       if (Array.isArray(data)) data = { translations: data };
-      const got = new Map((Array.isArray(data.translations) ? data.translations : []).map((t) => [String(t.id), String(t.roman_urdu ?? "").trim()]));
+      const got = new Map(
+        (Array.isArray(data.translations) ? data.translations : []).map((t) => [
+          String(t.id),
+          { roman: String(t.roman_urdu ?? "").trim(), urdu: String(t.urdu_script ?? "").trim() },
+        ])
+      );
       for (const it of chunk) {
         const t = got.get(it.id);
-        if (t) { out.set(it.id, t); cache[it.id] = t; }
+        if (t?.roman) { out.set(it.id, t); cache[it.id] = { r: t.roman, u: t.urdu }; }
       }
     })
   );

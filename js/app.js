@@ -68,7 +68,8 @@ function makeCard(entry) {
 
   const act = (name, label, extra = {}) => h("button", { type: "button", "data-act": name, ...extra }, label);
   const actions = h("div", { class: "actions" },
-    act("audio", "Sunein", { "aria-pressed": "false" }),
+    act("audio", "Tilawat sunein", { "aria-pressed": "false" }),
+    act("speak", "Tarjuma sunein", { "aria-pressed": "false" }),
     act("copy", "Copy"),
     act("prev", "◀ Pichli ayat"),
     act("next", "Agli ayat ▶"));
@@ -77,10 +78,11 @@ function makeCard(entry) {
   return card;
 }
 
-function setRoman(card, text) {
+function setRoman(card, text, urdu = "") {
   const p = $('[data-role="roman"]', card);
   p.className = "roman";
   p.dataset.text = text;
+  p.dataset.urdu = urdu; // same translation in Urdu script: this is what the voice reads
   p.replaceChildren(text);
 }
 
@@ -88,6 +90,7 @@ function setFallback(card, urduText, note) {
   const p = $('[data-role="roman"]', card);
   p.className = "roman fallback";
   delete p.dataset.text;
+  delete p.dataset.urdu;
   p.replaceChildren(h("span", { class: "note" }, note));
   if (urduText) p.append(h("span", { class: "urdu-script", lang: "ur", dir: "rtl" }, urduText));
   p.append(h("button", { type: "button", class: "retry", "data-act": "retry" }, "Roman Urdu dobara banayein"));
@@ -102,7 +105,11 @@ function showPending(card) {
 async function translateCards(cards, run, signal) {
   const cache = AI.romanCache();
   const todo = [];
-  for (const card of cards) (cache[card.dataset.id] ? setRoman(card, cache[card.dataset.id]) : todo.push(card));
+  for (const card of cards) {
+    const c = cache[card.dataset.id];
+    if (c?.r) setRoman(card, c.r, c.u || "");
+    else todo.push(card);
+  }
   if (!todo.length) return;
 
   let urdu = null;
@@ -120,7 +127,7 @@ async function translateCards(cards, run, signal) {
     if (run !== runId) return;
     for (const card of todo) {
       const t = map.get(card.dataset.id);
-      t ? setRoman(card, t) : setFallback(card, urduOf(card), "Is ayat ka Roman Urdu nahi ban saka. Urdu tarjuma:");
+      t ? setRoman(card, t.roman, t.urdu) : setFallback(card, urduOf(card), "Is ayat ka Roman Urdu nahi ban saka. Urdu tarjuma:");
     }
   } catch (e) {
     if (e.name === "AbortError" || run !== runId) return;
@@ -170,25 +177,94 @@ function addNeighbor(card, delta) {
   translateCards([fresh], runId, controller?.signal);
 }
 
-// ---------- audio (recitation) ----------
-let audio = null, audioBtn = null;
+// ---------- audio: recitation (mp3) and spoken translation (browser text-to-speech) ----------
+const LABELS = { audio: "Tilawat sunein", speak: "Tarjuma sunein" };
+let audio = null, activeBtn = null, speechToken = 0;
+const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
+
 function stopAudio() {
+  speechToken++; // cancels a running chunk chain
   if (audio) { audio.pause(); audio = null; }
-  if (audioBtn) { audioBtn.textContent = "Sunein"; audioBtn.setAttribute("aria-pressed", "false"); audioBtn = null; }
+  if (synth) synth.cancel();
+  if (activeBtn) { activeBtn.textContent = LABELS[activeBtn.dataset.act]; activeBtn.setAttribute("aria-pressed", "false"); activeBtn = null; }
 }
+function markPlaying(btn) {
+  activeBtn = btn;
+  btn.textContent = "Roken";
+  btn.setAttribute("aria-pressed", "true");
+}
+
 function toggleAudio(card, btn) {
-  const wasThis = audioBtn === btn;
+  const wasThis = activeBtn === btn;
   stopAudio();
   if (wasThis) return;
   const v = verseInfo(Q, Number(card.dataset.i));
   const url = `${CONFIG.AUDIO_BASE}${String(v.surah).padStart(3, "0")}${String(v.ayah).padStart(3, "0")}.mp3`;
   audio = new Audio(url);
-  audioBtn = btn;
-  btn.textContent = "Roken";
-  btn.setAttribute("aria-pressed", "true");
+  markPlaying(btn);
   audio.addEventListener("ended", stopAudio);
-  audio.addEventListener("error", () => { toast("Recitation nahi chal saki"); stopAudio(); });
-  audio.play().catch(() => { toast("Recitation nahi chal saki"); stopAudio(); });
+  audio.addEventListener("error", () => { toast("Tilawat nahi chal saki"); stopAudio(); });
+  audio.play().catch(() => { toast("Tilawat nahi chal saki"); stopAudio(); });
+}
+
+function getVoices() {
+  return new Promise((resolve) => {
+    const now = synth.getVoices();
+    if (now.length) return resolve(now);
+    const t = setTimeout(() => resolve(synth.getVoices()), 1200); // some browsers fill the list late
+    synth.addEventListener("voiceschanged", () => { clearTimeout(t); resolve(synth.getVoices()); }, { once: true });
+  });
+}
+const pickUrduVoice = (voices) =>
+  voices.find((v) => /^ur[-_]PK$/i.test(v.lang)) || voices.find((v) => /^ur/i.test(v.lang)) || null;
+
+// long texts are read sentence by sentence (browsers cut off long utterances)
+function speechChunks(text) {
+  const parts = text.split(/(?<=[۔؟!.?])\s+/).map((x) => x.trim()).filter(Boolean);
+  const out = [];
+  for (const part of parts) {
+    if (part.length <= 220 || !out.length) { out.push(part); continue; }
+    out.push(...part.split(/(?<=[،,])\s+/));
+  }
+  return out;
+}
+
+async function toggleSpeech(card, btn) {
+  const wasThis = activeBtn === btn;
+  stopAudio();
+  if (wasThis) return;
+  if (!synth) { toast("Is browser me awaaz se sunna support nahi. Chrome ya Edge use karein."); return; }
+
+  const p = $('[data-role="roman"]', card);
+  let text = p.dataset.urdu;
+  if (!text) { // no Urdu-script version of the Roman Urdu yet: fall back to the Urdu translation from our data
+    try { text = (await loadUrdu(Q))[card.dataset.i]; } catch { /* handled below */ }
+  }
+  if (!text) { toast("Tarjuma abhi tayyar nahi hai. Thori der baad dobara dabayein."); return; }
+
+  const token = speechToken;
+  markPlaying(btn);
+  const voice = pickUrduVoice(await getVoices());
+  if (token !== speechToken) return; // user pressed stop / another button while voices were loading
+  if (!voice) toast("Is device me Urdu awaaz nahi mili. Phone/computer ki Text-to-speech settings me Urdu (Pakistan) install karein.");
+
+  const chunks = speechChunks(text);
+  const speakAt = (k) => {
+    if (token !== speechToken) return;
+    if (k >= chunks.length) { stopAudio(); return; }
+    const u = new SpeechSynthesisUtterance(chunks[k]);
+    u.lang = voice?.lang || "ur-PK";
+    if (voice) u.voice = voice;
+    u.rate = 0.9;
+    u.onend = () => speakAt(k + 1);
+    u.onerror = (ev) => {
+      if (token !== speechToken || ev.error === "canceled" || ev.error === "interrupted") return;
+      toast("Awaaz nahi chal saki. Device me Urdu text-to-speech check karein.");
+      stopAudio();
+    };
+    synth.speak(u);
+  };
+  speakAt(0);
 }
 
 async function copyCard(card) {
@@ -204,6 +280,7 @@ el.results.addEventListener("click", (ev) => {
   const card = btn.closest(".ayah");
   switch (btn.dataset.act) {
     case "audio": toggleAudio(card, btn); break;
+    case "speak": toggleSpeech(card, btn); break;
     case "copy": copyCard(card); break;
     case "prev": addNeighbor(card, -1); break;
     case "next": addNeighbor(card, 1); break;

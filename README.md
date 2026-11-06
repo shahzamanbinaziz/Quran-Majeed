@@ -5,7 +5,7 @@ Ek asaan website jo mobile aur desktop dono par chalti hai.
 - **Ayat ka koi bhi hissa likhein ya bolein** (Arabic me) -> poore Quran me se wo ayat mil jati hai, poori Arabic ke saath.
 - **Sawal poochein** (Roman Urdu / Urdu / English), jaise *"namaz ki baat Quran me kahan hui hai?"* -> poore Quran se relevant ayat.
 - Har ayat ke neeche **Roman Urdu tarjuma** (Arabic se Gemini API ke zariye).
-- Har ayat par: **Sunein** (qari ki recitation), **Copy**, **Pichli / Agli ayat**.
+- Har ayat par: **Tilawat sunein** (qari ki recitation), **Tarjuma sunein** (tarjuma awaaz me), **Copy**, **Pichli / Agli ayat**.
 
 Koi build tool ya framework nahi: sirf HTML, CSS aur JavaScript. GitHub Pages par seedha chalta hai.
 
@@ -111,6 +111,16 @@ Search ka self-test:
 ```bash
 node scripts/test-search.mjs
 ```
+
+## Tarjuma awaaz me sunna ("Tarjuma sunein")
+
+Browser ki **Text-to-speech** (`speechSynthesis`) Urdu awaaz se tarjuma parhti hai. Phone/browser ki Urdu awaaz *Urdu script* parhti hai, Roman Urdu ko wo English ki tarah bigaad kar parhti, isliye Gemini har ayat ka wohi tarjuma Urdu script me bhi banata hai (`urdu_script`), aur awaaz wohi parhti hai. Screen par Roman Urdu hi dikhta hai.
+
+- Agar Urdu script wala hissa na bane, to awaaz Maududi ka Urdu tarjuma parhti hai.
+- **Android (Chrome):** Settings -> System -> Languages -> Text-to-speech -> Google TTS me **Urdu (Pakistan)** install karein.
+- **Windows:** Settings -> Time & language -> Speech -> Add voices -> Urdu.
+- **iPhone/Mac:** Settings -> Accessibility -> Spoken Content -> Voices -> Urdu.
+- Agar device me Urdu awaaz nahi hai to website bata deti hai ke kya install karna hai.
 
 ## Awaaz se search (mic)
 
